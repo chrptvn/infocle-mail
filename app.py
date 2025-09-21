@@ -7,11 +7,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- Configuration from environment ---
-SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))  # TLS
-GMAIL_USER = os.getenv("GMAIL_USER")            # your Gmail address
-GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")  # 16-char app password
-TO_EMAIL = os.getenv("TO_EMAIL", GMAIL_USER)    # where to receive form mail
+SMTP_HOST = os.getenv("SMTP_HOST", "smtp-relay.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SERVICE_EMAIL = os.getenv("SERVICE_EMAIL")
+TO_EMAIL = os.getenv("TO_EMAIL")
 
 app = Flask(__name__)
 
@@ -30,7 +29,7 @@ def send_email(subject: str, body: str) -> tuple[bool, str]:
         # Build email
         msg = EmailMessage()
         msg["Subject"] = subject
-        msg["From"] = GMAIL_USER
+        msg["From"] = SERVICE_EMAIL
         msg["To"] = TO_EMAIL
         msg.set_content(body)
 
@@ -38,7 +37,6 @@ def send_email(subject: str, body: str) -> tuple[bool, str]:
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as smtp:
             smtp.ehlo()
             smtp.starttls()  # upgrade connection to TLS
-            smtp.login(GMAIL_USER, GMAIL_APP_PASSWORD)
             smtp.send_message(msg)
             
         return True, ""
@@ -57,13 +55,7 @@ def send_mail():
 
     subject = (data.get("subject") or "Website Contact").strip()
     body = (data.get("body") or "").strip()
-    
-    # Simple anti-bot honeypot: leave this field empty in your form
-    honeypot = (data.get("honeypot") or "").strip()
 
-    # Basic validation
-    if honeypot:
-        return jsonify({"ok": True}), 200  # silently ignore bots
     if not body:
         return jsonify({"ok": False, "error": "Body is required"}), 400
 
@@ -79,6 +71,3 @@ def send_mail():
 def health():
     """Health check endpoint"""
     return jsonify({"status": "healthy"}), 200
-
-if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=8080)
