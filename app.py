@@ -1,5 +1,4 @@
 import os
-import re
 import smtplib
 from email.message import EmailMessage
 from flask import Flask, request, jsonify
@@ -16,53 +15,70 @@ TO_EMAIL = os.getenv("TO_EMAIL", GMAIL_USER)    # where to receive form mail
 
 app = Flask(__name__)
 
-EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-
-def is_valid_email(value: str) -> bool:
-    return bool(value and EMAIL_RE.match(value))
-
-@app.post("/api/v1/send_mail")
-def send_mail():
-    # Accept JSON or form-encoded payloads
-    data = request.get_json(silent=True) or request.form
-
-    name = (data.get("name") or "").strip()
-    email = (data.get("email") or "").strip()
-    subject = (data.get("subject") or "Website contact").strip()
-    message = (data.get("message") or "").strip()
-    # Simple anti-bot honeypot: leave this field empty in your form
-    honeypot = (data.get("company") or "").strip()
-
-    # Basic validation
-    if honeypot:
-        return jsonify({"ok": True}), 200  # silently ignore bots
-    if not name or not message or not is_valid_email(email):
-        return jsonify({"ok": False, "error": "Invalid input"}), 400
-
-    # Build email
-    msg = EmailMessage()
-    msg["Subject"] = f"[Contact] {subject}"
-    msg["From"] = f"{name} <{GMAIL_USER}>"          # authenticated sender
-    msg["Reply-To"] = f"{name} <{email}>"           # user who filled the form
-    msg["To"] = TO_EMAIL
-
-    body = (
-        f"New contact form submission\n\n"
-        f"Name: {name}\n"
-        f"Email: {email}\n"
-        f"Subject: {subject}\n"
-        f"Message:\n{message}\n"
-    )
-    msg.set_content(body)
-
-    # Send via Gmail SMTP (TLS)
+def send_email(subject: str, body: str) -> tuple[bool, str]:
+    """
+    Generic email sender function.
+    
+    Args:
+        subject: Email subject line
+        body: Email body content
+        
+    Returns:
+        tuple: (success: bool, error_message: str)
+    """
     try:
+        # Build email
+        msg = EmailMessage()
+        msg["Subject"] = subject
+        msg["From"] = GMAIL_USER
+        msg["To"] = TO_EMAIL
+        msg.set_content(body)
+
+        # Send via Gmail SMTP (TLS)
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as smtp:
             smtp.ehlo()
             smtp.starttls()  # upgrade connection to TLS
             smtp.login(GMAIL_USER, GMAIL_APP_PASSWORD)
             smtp.send_message(msg)
+            
+        return True, ""
+        
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 502
+        return False, str(e)
 
-    return jsonify({"ok": True}), 200
+@app.post("/api/v1/send_mail")
+def send_mail():
+    """
+    API endpoint to send mail from web forms.
+    Accepts subject and body in JSON or form data.
+    """
+    # Accept JSON or form-encoded payloads
+    data = request.get_json(silent=True) or request.form
+
+    subject = (data.get("subject") or "Website Contact").strip()
+    body = (data.get("body") or "").strip()
+    
+    # Simple anti-bot honeypot: leave this field empty in your form
+    honeypot = (data.get("honeypot") or "").strip()
+
+    # Basic validation
+    if honeypot:
+        return jsonify({"ok": True}), 200  # silently ignore bots
+    if not body:
+        return jsonify({"ok": False, "error": "Body is required"}), 400
+
+    # Send email using generic function
+    success, error = send_email(subject, body)
+    
+    if success:
+        return jsonify({"ok": True}), 200
+    else:
+        return jsonify({"ok": False, "error": error}), 502
+
+@app.route("/health")
+def health():
+    """Health check endpoint"""
+    return jsonify({"status": "healthy"}), 200
+
+if __name__ == "__main__":
+    app.run(debug=True, host="0.0.0.0", port=8080)
