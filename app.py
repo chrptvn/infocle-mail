@@ -44,7 +44,7 @@ def send_email(subject: str, body: str) -> tuple[bool, str]:
     except Exception as e:
         return False, str(e)
 
-@app.post("/api/v1/send_mail")
+@app.post("/v1/send_mail")
 def send_mail():
     """
     API endpoint to send mail from web forms.
